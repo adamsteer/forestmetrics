@@ -109,41 +109,71 @@ def comp_cli(points):
 
 # vegetation layer cover fraction: LCF
 
-def comp_lcf(points, heights, vcf):
+# step 1: compute veg_below layers...
+
+def comp_veg_layers(points, heights):
     """
-    Compute LCF as per the TERN product manual:
+    Compute veg layers needed for LCF as per the TERN product manual:
 
     LCF = VCF * (((veg returns below H2) - (veg returns below H1)) / (veg returns below H2))
 
     Inputs:
-    - a set of points to compute LCF over
-    - a height threshold pair, containing H1 and H2 as an array [h1, h2]
-    - a precomputed VCF
+    - a set of points to compute vegetation counts over
+    - an array of heights
 
     Outputs:
-    - a floating point number denoting LCF
+    - a dictionary of counts for vegetation points below each height
 
     Conditions:
 
     The LCF *must* be computed over the same set of points as the VCF used as input.
 
     """
-
-    h1 = heights[0]
-    h2 = heights[1]
-
+    veg_below = {}
     #find veg returns - ASPRS classes 3,4,5
     veg_returns = np.where(np.logical_or(points["Classification"].values == 3,
                              points["Classification"].values == 4,
                              points["Classification"].values == 5))
-    # how many veg returns have height below the first threshold?
-    vegbelowh1 = np.size(np.where(points["HeightAboveGround"][vegreturns] < h1))
+    # set total of veg returns
+    veg_below["all"] = np.size(veg_returns)
 
-    # how many veg returns have height below the second threshold?
-    vegbelowh2 = np.size(np.where(points["HeightAboveGround"][vegreturns] < h2))
+    # for each height threshold
+    for height in heights:
+        try:
+            #get vegetation points in this cell below a given height threshold
+            veg_below_height = np.size(np.where(points["HeightAboveGround"].values[veg_returns] < height))
+        except ValueError:
+            veg_below_height = np.nan
+        # add the resulting value to a dictionary of point counts in this cell
+        veg_below[str(height)] = veg_below_height
 
-    # compute the LCF
-    lcf = vcf * ( (vegbelowh2 - vegbelowh1) / vegbelowh2)
+    return(veg_below)
+
+def comp_lcf(veg_below, vcf):
+    """
+    Compute LCF as per the TERN product manual:
+
+    LCF = VCF * (((veg returns below H2) - (veg returns below H1)) / (veg returns below H2))
+
+    Inputs:
+    - a dictionary of arrays with point counts per cell of vegetation below
+     threshold heights, computed by comp_veg_below
+    - a precomputed VCF raster
+
+    Outputs:
+    - a dictionary of arrays containing lcf_h, lcf_os and lcf_us
+
+    Note: this function requires output of comp_veg_layers to be compiled into grids, it does not
+          operate directly on the output of comp_veg_layers
+    """
+    lcf = {}
+
+    lcf["lcf_h"] = vcf * np.divide((veg_below["1"] - veg_below["0.05"]),
+                        veg_below["1"])
+    lcf["lcf_os"] = vcf * np.divide((veg_below["3"] - veg_below["1"]),
+                        veg_below["3"])
+    lcf["lcf_us"] = vcf * np.divide((veg_below["all"] - veg_below["3"]),
+                        veg_below["all"])
 
     return(lcf)
 
