@@ -101,7 +101,7 @@ def comp_cli(points):
 
         points_at_return = np.where(points["ReturnNumber"] == nreturn)
         cli_numerator.append(weight * maxreturns * np.size(points_at_return) )
-        cli_denominator.append( weight * maxreturns )
+        cli_denominator.append( weight * np.size(points_at_return ))
 
     cli = (np.sum(cli_numerator) / np.sum(cli_denominator)) - 1
 
@@ -161,13 +161,24 @@ def comp_lcf(veg_below, vcf):
     - a precomputed VCF raster
 
     Outputs:
-    - a dictionary of arrays containing lcf_h, lcf_os and lcf_us
+    - a dictionary of arrays containing TERN manual layer fraction metrics
 
     Note: this function requires output of comp_veg_layers to be compiled into grids, it does not
           operate directly on the output of comp_veg_layers
     """
     lcf = {}
 
+    #fuel layers
+    lcf["lcf_cf"] = vcf * np.divide((veg_below["all"] - veg_below["2"]),
+                        veg_below["all"])
+
+    lcf["lcf_ef"] = vcf * np.divide((veg_below["2"] - veg_below["0.5"]),
+                        veg_below["2"])
+
+    lcf["lcf_nsf"] = vcf * np.divide((veg_below["0.5"] - veg_below["0.05"]),
+                        veg_below["0.5"])
+
+    #under and overstory
     lcf["lcf_h"] = vcf * np.divide((veg_below["1"] - veg_below["0.05"]),
                         veg_below["1"])
     lcf["lcf_os"] = vcf * np.divide((veg_below["3"] - veg_below["1"]),
@@ -248,7 +259,7 @@ def comp_fbf(points):
 
     return(fbf)
 
-def comp_density(points, resolution):
+def comp_density(points):
     # compute mean point density
     # npoints / area
     # of this

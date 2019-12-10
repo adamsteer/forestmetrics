@@ -212,6 +212,11 @@ def get_cell_points(poly, df, sindex):
 def comp_dem(lasfile, outpath, resolution):
     # interpolate ground returns in a grid and output a raster
     # this is likely to be handled by PDAL... or GDAL
+
+    fileroot = make_file_rootname(lasfile)
+
+    outfilename =  outpath + "/dem/" + fileroot + "-DEM-" + str(resolution) + "m.tiff"
+
     pipeline = {
         "pipeline": [
             {
@@ -228,7 +233,6 @@ def comp_dem(lasfile, outpath, resolution):
                 "resolution": resolution,
                 "output_type": "idw",
                 "window_size": 3
-
             }
         ]
     }
@@ -254,7 +258,6 @@ def read_data(lasfile):
     """
     wrapper to read in LAS data and produce a dataframe + spatial index
     """
-
     metadata = readlasmetadata(lasfile)
 
     points = readlasfile(lasfile)
