@@ -268,7 +268,7 @@ def comp_density(points, resolution):
     npoints = np.size(points["Classification"])
 
     # divide npoints by area
-    mean_density = np.int(np.floor(npoints / resolution**2)
+    mean_density = np.int(np.floor(npoints / resolution**2))
 
     return(mean_density)
 
