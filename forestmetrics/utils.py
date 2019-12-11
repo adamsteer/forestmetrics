@@ -215,7 +215,12 @@ def comp_dem(lasfile, outpath, resolution):
 
     fileroot = make_file_rootname(lasfile)
 
-    outfilename =  outpath + "/dem/" + fileroot + "-DEM-" + str(resolution) + "m.tiff"
+    outfilename = os.path.join(outpath,
+                               "dem",
+                               fileroot + "-DEM-" + str(resolution) + "m.tif")
+
+    #outfilename = "./Berridale201802-LID2-C3-AHD_6585974_55_0002_0002-DEM-25m.tif"
+    print(outfilename)
 
     pipeline = {
         "pipeline": [
@@ -240,11 +245,8 @@ def comp_dem(lasfile, outpath, resolution):
     #create a pipeline object
     pipeline = pdal.Pipeline(json.dumps(pipeline))
 
-    # execute the pipeline
-    try:
-        count = pipeline.execute()
-    except ValueError:
-        print("DEM could not be written")
+    pipeline.validate()
+    count = pipeline.execute()
 
     return()
 

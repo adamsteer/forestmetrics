@@ -259,13 +259,32 @@ def comp_fbf(points):
 
     return(fbf)
 
-def comp_density(points):
-    # compute mean point density
-    # npoints / area
-    # of this
+def comp_density(points, resolution):
+    """
+    compute mean point density - npoints / area
+    """
 
+    #find number of points, any dimension will work here...
     npoints = np.size(points["Classification"])
 
+    # divide npoints by area
     mean_density = npoints / resolution**2
 
     return(mean_density)
+
+def comp_vh(points):
+    """
+    find vegetation points, compute mean height above ground for any vegetation
+    present
+
+    """
+
+    try:
+        veg_returns = np.where(np.logical_or(points["Classification"].values == 3,
+                                 points["Classification"].values == 4,
+                                 points["Classification"].values == 5))
+        vh = np.mean(points["HeightAboveGround"].values[veg_returns])
+    except ValueError:
+        vh = np.nan
+
+    return(vh)
