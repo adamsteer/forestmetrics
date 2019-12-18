@@ -27,6 +27,31 @@ import sys
 # this is needed to create a raster from the output array
 from osgeo import gdal
 import osgeo.osr as osr
+import boto3
+
+def get_elvis_data(elvisresult, aws_params):
+
+
+    s3 = boto3.client('sts',
+                aws_access_key_id=aws_params["aws_key"],
+                aws_secret_access_key= aws_params["aws_secret"],
+                region_name=aws_params["region"]
+                )
+    assumed_role_object = s3.assume_role(
+                RoleArn=aws_params["aws_role_arn"],
+                ExternalId=aws_params["aws_external_id"],
+                RoleSessionName=aws_params["aws_role_session_name"]
+                )
+    credentials = assumed_role_object['Credentials']
+    s3_resource = boto3.resource('s3',
+                aws_access_key_id=credentials['AccessKeyId'],
+                aws_secret_access_key=credentials['SecretAccessKey'],
+                aws_session_token=credentials['SessionToken'],
+                region_name='ap-southeast-2')
+
+    bucketparts = fileurl.split("/")
+
+    return()
 
 def write_product_geotiff(griddedpoints, outfile, parameters):
     """
@@ -219,9 +244,6 @@ def comp_dem(lasfile, outpath, resolution):
                                "dem",
                                fileroot + "-DEM-" + str(resolution) + "m.tif")
 
-    #outfilename = "./Berridale201802-LID2-C3-AHD_6585974_55_0002_0002-DEM-25m.tif"
-    print(outfilename)
-
     pipeline = {
         "pipeline": [
             {
@@ -244,13 +266,21 @@ def comp_dem(lasfile, outpath, resolution):
 
     #create a pipeline object
     pipeline = pdal.Pipeline(json.dumps(pipeline))
-
-    pipeline.validate()
     count = pipeline.execute()
 
     return()
 
 def make_file_rootname(lasfile):
+    """
+    make a file 'root name' from an input file path
+
+    input:
+    - a path to an input file (string)
+
+    output:
+    - a string containing the file name minus extension, assuming
+    the extension is 4 characters long
+    """
     filebits = lasfile.split("/")
     infilename = filebits[-1]
     fileroot = infilename[:-4]
@@ -258,7 +288,7 @@ def make_file_rootname(lasfile):
 
 def read_data(lasfile):
     """
-    wrapper to read in LAS data and produce a dataframe + spatial index
+    #wrapper to read in LAS data and produce a dataframe + spatial index
     """
     metadata = readlasmetadata(lasfile)
 
@@ -269,3 +299,164 @@ def read_data(lasfile):
     spatial_index = spatialindex(dataframe)
 
     return(metadata, dataframe, spatial_index)
+
+def compute_tern_products(metadata, points, sindex, resolution, lasfile, outpath):
+    """
+    Wrapper to iterate over the input data and generate rasters for each product.
+
+    *note this part could be paralellised - maybe per-product, or per-cell
+
+    Each grid square processed in this loop corresponds to one pixel in an output raster.
+
+    """
+
+    #set up an 'output resolution' sized grid - like a fishnet grid.
+    # each polygon in the resulting set covers an area of 'resolution X resolution'
+    pixel_grid = forestutils.gen_raster_cells(metadata, resolution)
+
+    #set up output rasters
+
+    # get tile width and height
+    tile_width = metadata["metadata"]["readers.las"]["maxx"] - metadata["metadata"]["readers.las"]["minx"]
+    tile_height = metadata["metadata"]["readers.las"]["maxy"] - metadata["metadata"]["readers.las"]["miny"]
+
+    raster_xsize = int(np.ceil(tile_width) / resolution)
+    raster_ysize = int(np.ceil(tile_height) / resolution)
+
+    #replicate for all products...
+    vh_raster = np.zeros((raster_xsize, raster_ysize))
+    vcf_raster = np.zeros((raster_xsize, raster_ysize))
+    cth_raster = np.zeros((raster_xsize, raster_ysize))
+    cbh_raster = np.zeros((raster_xsize, raster_ysize))
+    fbf_raster = np.zeros((raster_xsize, raster_ysize))
+    cli_raster = np.zeros((raster_xsize, raster_ysize))
+    density_raster = np.zeros((raster_xsize, raster_ysize))
+
+    veg_below_dict = {}
+
+    veg_below_dict["all"] = np.zeros((raster_xsize, raster_ysize))
+    for height in LCF_HEIGHTS:
+        veg_below_dict[str(height)] = np.zeros((raster_xsize, raster_ysize))
+
+    #internal loop around grid squares covering the LAS tile.
+    # this is another ppoint for parallelisation - since we can set up a list of geometries
+    # and cast that at multipuple processes, setting up one process per grid square
+    # another way to do this would be to recast this loop block into a function which can
+    # be called by one process per product
+    # the second strategy seems easier, then only one process is trying to write into each
+    # output array.
+
+    for pixel in pixel_grid:
+
+        #compute output array index for this cell:
+        poly_x, poly_y = pixel.centroid.xy
+
+        poly_base_x = poly_x[0] - metadata["metadata"]["readers.las"]["minx"]
+        poly_base_y = poly_y[0] - metadata["metadata"]["readers.las"]["miny"]
+
+        array_x = int(np.floor((poly_base_x / (resolution)) ))
+        array_y = int(np.floor((poly_base_y / (resolution)) ))
+
+        #get points for this cell
+        matches = forestutils.get_cell_points(pixel, points, sindex)
+
+        #compute in order
+        #VH
+
+        vh_raster[array_x, array_y] = metrics.comp_vh(matches)
+
+        #VCF
+        vcf_raster[array_x, array_y] = metrics.comp_vcf(matches)
+
+        #LCF - long-ish process..
+        # compute a dictionary of points below height thresholds
+        veg_below = metrics.comp_veg_layers(matches, LCF_HEIGHTS)
+
+        # add the first element of the dictionary to a raster output
+        veg_below_dict["all"][array_x, array_y] = veg_below["all"]
+
+        #iterate over the height thresholds and do likewise...
+        for height in LCF_HEIGHTS:
+            veg_below_dict[str(height)][array_x, array_y] = veg_below[str(height)]
+
+        #CTH
+        cth_raster[array_x, array_y] = metrics.comp_cth(matches)
+
+        #CBH
+        cbh_raster[array_x, array_y] = metrics.comp_cbh(matches)
+
+        #FBF
+        fbf_raster[array_x, array_y] = metrics.comp_fbf(matches)
+
+        #CLI
+        cli_raster[array_x, array_y] = metrics.comp_cli(matches)
+
+        #density
+        density_raster[array_x, array_y] = metrics.comp_density(matches, resolution)
+
+    #end of computing stuff, time to make outputs...
+
+    #compute LCF values given our height thresholded veg counts
+    lcf = metrics.comp_lcf(veg_below_dict, vcf_raster)
+
+    if (not os.path.isdir(outpath + "/dem")):
+        os.mkdir(outpath + "/dem")
+
+    dem = forestutils.comp_dem(lasfile, outpath, resolution)
+
+    tern_products = {}
+    tern_products["vh"] = vh_raster
+    tern_products["vcf"] = vcf_raster
+    tern_products["cth"] = cth_raster
+    tern_products["cbh"] = cbh_raster
+    tern_products["fbf"] = fbf_raster
+    tern_products["cli"] = cli_raster
+    tern_products["lcf_h"] = lcf["lcf_h"]
+    tern_products["lcf_os"] = lcf["lcf_os"]
+    tern_products["lcf_us"] = lcf["lcf_us"]
+    tern_products["lcf_cf"] = lcf["lcf_cf"]
+    tern_products["lcf_ef"] = lcf["lcf_ef"]
+    tern_products["lcf_nsf"] = lcf["lcf_nsf"]
+    tern_products["density"] = density_raster
+
+    return(tern_products)
+
+def export_tern_products(tern_products, metadata, resolution, lasfile, outpath):
+
+    #set up GDAL parameters
+
+    wktcrs = metadata["metadata"]["readers.las"]["comp_spatialreference"]
+
+    raster_parameters = {}
+    raster_parameters["width"] = np.shape(tern_products["vh"])[0]
+    raster_parameters["height"] = np.shape(tern_products["vh"])[1]
+    raster_parameters["upperleft_x"] = metadata["metadata"]["readers.las"]["minx"]
+    raster_parameters["upperleft_y"] = metadata["metadata"]["readers.las"]["maxy"]
+    raster_parameters["resolution"] = resolution
+    raster_parameters["projection"] = wktcrs
+
+    fileroot = forestutils.make_file_rootname(lasfile)
+    print(fileroot)
+
+    for productname in tern_products.keys():
+
+        if (not os.path.isdir(os.path.join(outpath,
+                                       productname))):
+            os.mkdir(os.path.join(outpath,
+                                  productname))
+
+
+        #set output filenames
+        separator = "-"
+
+        raster_name = separator.join([fileroot,
+                                     productname,
+                                     str(resolution) + "m.tiff"])
+        raster_path = os.path.join(outpath,
+                                   productname,
+                                   raster_name)
+        print(raster_path)
+        forestutils.write_product_geotiff(tern_products[productname], raster_path, raster_parameters)
+
+
+    return()

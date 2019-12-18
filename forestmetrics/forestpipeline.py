@@ -48,7 +48,7 @@ year = elvisparams["year"]
 heightref = elvisparams["heightref"]
 """
 ## first call elvis
-datasets = callelvis(bbox, pointtype, collection, year, heightref)
+#datasets = callelvis(bbox, pointtype, collection, year, heightref)
 
 
 ## next parse results into an array that can be delivered to an
