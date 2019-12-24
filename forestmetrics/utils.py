@@ -106,11 +106,11 @@ def pdal2df(points):
     """
 
     arr = points[0]
-    description = arr.dtype.descr
-    cols = [col for col, __ in description]
-    gdf = gpd.GeoDataFrame({col: arr[col] for col in cols})
+    #description = arr.dtype.descr
+    #cols = [col for col, __ in description]
+    gdf = gpd.GeoDataFrame(arr)
     gdf.name = 'nodes'
-    gdf['geometry'] = gdf.apply(lambda row: Point((row['X'], row['Y'], row['Z'])), axis=1)
+    gdf['geometry'] = gdf.apply(lambda row: Point((row['X'], row['Y'])), axis=1)
 
     return(gdf)
 
