@@ -11,6 +11,7 @@ import pdal
 import numpy as np
 import json
 
+import shapely
 from shapely.geometry import Point
 from shapely.geometry import MultiPolygon
 from shapely.geometry import box
@@ -110,8 +111,8 @@ def pdal2df(points):
     #cols = [col for col, __ in description]
     gdf = gpd.GeoDataFrame(arr)
     gdf.name = 'nodes'
-    gdf['geometry'] = gdf.apply(lambda row: Point((row['X'], row['Y'])), axis=1)
-
+    #gdf['geometry'] = gdf.apply(lambda row: Point((row['X'], row['Y'])), axis=1)
+    gdf["geometry"] = [shapely.geometry.Point(xy) for xy in zip(gdf.X, gdf.Y)]
     return(gdf)
 
 # create a GeoPandas rTree spatial index
@@ -144,6 +145,9 @@ def readlasfile(lasfile):
             },
             {
                 "type": "filters.hag"
+            },
+            {
+                "type": "filters.mortonorder"
             }
         ]
     }
