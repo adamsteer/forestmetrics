@@ -112,7 +112,11 @@ def pdal2df(points):
     gdf = gpd.GeoDataFrame(arr)
     gdf.name = 'nodes'
     #gdf['geometry'] = gdf.apply(lambda row: Point((row['X'], row['Y'])), axis=1)
+    #adding a geometry for each point is a slow step...
     gdf["geometry"] = [shapely.geometry.Point(xy) for xy in zip(gdf.X, gdf.Y)]
+
+    gdf = gdf[["X", "Y", "Z", "HeightAboveGround", "Classification", "Intensity", "ReturnNumber", "NumberOfReturns", "geometry"]]
+
     return(gdf)
 
 # create a GeoPandas rTree spatial index
@@ -135,7 +139,7 @@ def readlasfile(lasfile):
     Run a PDAL pipeline. Input is a JSON declaration to
     deliver to PDAL. Output is a labelled numpy array.
 
-    Data are filtered to compute height above ground using nearest ground point neighbours (TIN method arriving soon)
+    Data are filtered to compute height above ground using nearest ground point neighbours (TIN method arriving soon) and sort by morton order. Any unused dimensions are also trimmed.
     """
     pipeline = {
         "pipeline": [
