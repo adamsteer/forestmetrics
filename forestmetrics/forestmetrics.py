@@ -92,18 +92,22 @@ def comp_cli(points):
     cli_numerator = []
     cli_denominator = []
 
-    for nreturn in np.arange(minreturns, maxreturns+1, 1):
-        # I don't really understand the fixed values in the weighting function - we can record
-        # a lot more returns... I get that it's supposed to give higher return numbers a lower
-        # weight based on likelihood of being recorded..
+    try:
+        for nreturn in np.arange(minreturns, maxreturns+1, 1):
+            # I don't really understand the fixed values in the weighting function - we can record
+            # a lot more returns... I get that it's supposed to give higher return numbers a lower
+            # weight based on likelihood of being recorded..
 
-        weight = 1/min([5,nreturn])
+            weight = 1/min([5,nreturn])
 
-        points_at_return = np.where(points["ReturnNumber"] == nreturn)
-        cli_numerator.append(weight * maxreturns * np.size(points_at_return) )
-        cli_denominator.append( weight * np.size(points_at_return ))
+            points_at_return = np.where(points["ReturnNumber"] == nreturn)
+            cli_numerator.append(weight * maxreturns * np.size(points_at_return) )
+            cli_denominator.append( weight * np.size(points_at_return ))
 
-    cli = (np.sum(cli_numerator) / np.sum(cli_denominator)) - 1
+        cli = (np.sum(cli_numerator) / np.sum(cli_denominator)) - 1
+    except ValueError:
+
+        cli = NODATA_VALUE
 
     return(cli)
 
@@ -142,8 +146,11 @@ def comp_veg_layers(points, heights):
         try:
             #get vegetation points in this cell below a given height threshold
             veg_below_height = np.size(np.where(points["HeightAboveGround"].values[veg_returns] < height))
+
         except ValueError:
-            veg_below_height = np.nan
+
+            veg_below_height = NODATA_VALUE
+
         # add the resulting value to a dictionary of point counts in this cell
         veg_below[str(height)] = veg_below_height
 
@@ -167,24 +174,27 @@ def comp_lcf(veg_below, vcf):
           operate directly on the output of comp_veg_layers
     """
     lcf = {}
+    if (vcf is not NODATA_VALUE):
+        #fuel layers
+        lcf["lcf_cf"] = vcf * np.divide((veg_below["all"] - veg_below["2"]),
+                            veg_below["all"])
 
-    #fuel layers
-    lcf["lcf_cf"] = vcf * np.divide((veg_below["all"] - veg_below["2"]),
-                        veg_below["all"])
+        lcf["lcf_ef"] = vcf * np.divide((veg_below["2"] - veg_below["0.5"]),
+                            veg_below["2"])
 
-    lcf["lcf_ef"] = vcf * np.divide((veg_below["2"] - veg_below["0.5"]),
-                        veg_below["2"])
+        lcf["lcf_nsf"] = vcf * np.divide((veg_below["0.5"] - veg_below["0.05"]),
+                            veg_below["0.5"])
 
-    lcf["lcf_nsf"] = vcf * np.divide((veg_below["0.5"] - veg_below["0.05"]),
-                        veg_below["0.5"])
-
-    #under and overstory
-    lcf["lcf_h"] = vcf * np.divide((veg_below["1"] - veg_below["0.05"]),
-                        veg_below["1"])
-    lcf["lcf_os"] = vcf * np.divide((veg_below["3"] - veg_below["1"]),
-                        veg_below["3"])
-    lcf["lcf_us"] = vcf * np.divide((veg_below["all"] - veg_below["3"]),
-                        veg_below["all"])
+        #under and overstory
+        lcf["lcf_h"] = vcf * np.divide((veg_below["1"] - veg_below["0.05"]),
+                            veg_below["1"])
+        lcf["lcf_os"] = vcf * np.divide((veg_below["3"] - veg_below["1"]),
+                            veg_below["3"])
+        lcf["lcf_us"] = vcf * np.divide((veg_below["all"] - veg_below["3"]),
+                            veg_below["all"])
+    else:
+        print('no first returns, set lcf to {}'.format(NODATA_VALUE))
+        lcf = NODATA_VALUE
 
     return(lcf)
 
@@ -205,6 +215,7 @@ def comp_cth(points):
 
         if (np.size(canopy_index) > 0):
             cth = np.quantile(vegpoints[canopy_index], 0.95)
+
         else:
             cth = NODATA_VALUE
 
@@ -231,6 +242,7 @@ def comp_cbh(points):
         if(np.size(canopy_index) > 0 ):
             #find the 0.1 quantile
             cbh = np.quantile(vegpoints[canopy_index], 0.10)
+
         else:
             cbh = NODATA_VALUE
 
@@ -263,12 +275,15 @@ def comp_density(points, resolution):
     """
     compute mean point density - npoints / area
     """
+    try:
+        #find number of points, any dimension will work here...
+        npoints = np.size(points["Classification"])
 
-    #find number of points, any dimension will work here...
-    npoints = np.size(points["Classification"])
+        # divide npoints by area
+        mean_density = np.int(np.floor(npoints / resolution**2))
+    except ValueError:
 
-    # divide npoints by area
-    mean_density = np.int(np.floor(npoints / resolution**2))
+        mean_density = NODATA_VALUE
 
     return(mean_density)
 
@@ -285,6 +300,6 @@ def comp_vh(points):
                                  points["Classification"].values == 5))
         vh = np.mean(points["HeightAboveGround"].values[veg_returns])
     except ValueError:
-        vh = np.nan
+        vh = NODATA_VALUE
 
     return(vh)

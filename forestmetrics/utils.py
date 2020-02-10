@@ -30,6 +30,11 @@ from osgeo import gdal
 import osgeo.osr as osr
 import boto3
 
+import forestmetrics.forestmetrics as metrics
+
+NODATA_VALUE = -9999
+LCF_HEIGHTS = [0, 0.05, 0.5, 1, 2, 3]
+
 def get_elvis_data(elvisresult, aws_params):
 
 
@@ -89,6 +94,86 @@ def write_product_geotiff(griddedpoints, outfile, parameters):
 
     ds.FlushCache()
     ds = None
+
+    return()
+
+def comp_dem(lasfile, outpath, resolution):
+    # interpolate ground returns in a grid and output a raster
+    # this is likely to be handled by PDAL... or GDAL
+
+    fileroot = make_file_rootname(lasfile)
+
+    outfilename = os.path.join(outpath,
+                               "dem",
+                               fileroot + "-DEM-" + str(resolution) + "m.tif")
+
+    # PDAL approach - open the LAS file again
+    pipeline = {
+        "pipeline": [
+            {
+                "type": "readers.las",
+                "filename": lasfile
+            },
+            {
+                "type": "filters.range",
+                "limits": "Classification[2:2]",
+            },
+            {
+                "type": "filters.elm"
+            },
+            {
+                "type": "filters.outlier"
+            },
+            {
+                "type": "filters.range",
+                "limits": "Classification[2:2]",
+            },
+            {
+                "type": "writers.gdal",
+                "filename": outfilename,
+                "resolution": resolution,
+                "output_type": "idw",
+                "window_size": 3
+            }
+        ]
+    }
+
+    #create a pipeline object
+    pipeline = pdal.Pipeline(json.dumps(pipeline))
+    count = pipeline.execute()
+
+    # partial GDAL approach - I think the cost of reading the file again is OK in this
+    # case, since PDAL can stream the DEM from the whole LAS file and avoid
+    # looping over chunks *or* processing all the points in memory. Its also fast
+    """
+    width = parameters["width"]
+    height = parameters["height"]
+    wktcrs = parameters["projection"]
+    resolution = parameters["resolution"]
+
+    srs = osr.SpatialReference()
+    srs.ImportFromWkt(wktcrs)
+
+    drv = gdal.GetDriverByName('GTiff').CreateCopy('/vsimem/output.tif', mem)
+    #drv = gdal.GetDriverByName("GTiff")
+
+    ds = drv.Create(outfile, width, height, 1, gdal.GDT_Float32 )
+    ds.SetGeoTransform([parameters["upperleft_x"],
+                       parameters["resolution"],
+                       0,
+                       parameters["upperleft_y"],
+                       0,
+                       -parameters["resolution"]])
+    ds.SetProjection(srs.ExportToWkt())
+
+    # this pointset needs to be points with Class abel
+    ds.GetRasterBand(1).WriteArray(np.rot90(points))
+
+    dem_ds = gdal.Grid()
+
+    #ds.FlushCache()
+    #ds = None
+    """
 
     return()
 
@@ -242,42 +327,6 @@ def get_cell_points(poly, df, sindex):
 
     return(precise_matches)
 
-def comp_dem(lasfile, outpath, resolution):
-    # interpolate ground returns in a grid and output a raster
-    # this is likely to be handled by PDAL... or GDAL
-
-    fileroot = make_file_rootname(lasfile)
-
-    outfilename = os.path.join(outpath,
-                               "dem",
-                               fileroot + "-DEM-" + str(resolution) + "m.tif")
-
-    pipeline = {
-        "pipeline": [
-            {
-                "type": "readers.las",
-                "filename": lasfile
-            },
-            {
-                "type": "filters.range",
-                "limits": "Classification[2:2]",
-            },
-            {
-                "type": "writers.gdal",
-                "filename": outfilename,
-                "resolution": resolution,
-                "output_type": "idw",
-                "window_size": 3
-            }
-        ]
-    }
-
-    #create a pipeline object
-    pipeline = pdal.Pipeline(json.dumps(pipeline))
-    count = pipeline.execute()
-
-    return()
-
 def make_file_rootname(lasfile):
     """
     make a file 'root name' from an input file path
@@ -320,7 +369,7 @@ def compute_tern_products(metadata, points, sindex, resolution, lasfile, outpath
 
     #set up an 'output resolution' sized grid - like a fishnet grid.
     # each polygon in the resulting set covers an area of 'resolution X resolution'
-    pixel_grid = forestutils.gen_raster_cells(metadata, resolution)
+    pixel_grid = gen_raster_cells(metadata, resolution)
 
     #set up output rasters
 
@@ -366,7 +415,7 @@ def compute_tern_products(metadata, points, sindex, resolution, lasfile, outpath
         array_y = int(np.floor((poly_base_y / (resolution)) ))
 
         #get points for this cell
-        matches = forestutils.get_cell_points(pixel, points, sindex)
+        matches = get_cell_points(pixel, points, sindex)
 
         #compute in order
         #VH
@@ -410,7 +459,9 @@ def compute_tern_products(metadata, points, sindex, resolution, lasfile, outpath
     if (not os.path.isdir(outpath + "/dem")):
         os.mkdir(outpath + "/dem")
 
-    dem = forestutils.comp_dem(lasfile, outpath, resolution)
+    # this could be rewritten to use GDAL in Python - reopening the las file
+    # to read is a bit inefficient
+    dem = comp_dem(lasfile, outpath, resolution)
 
     tern_products = {}
     tern_products["vh"] = vh_raster
@@ -443,7 +494,7 @@ def export_tern_products(tern_products, metadata, resolution, lasfile, outpath):
     raster_parameters["resolution"] = resolution
     raster_parameters["projection"] = wktcrs
 
-    fileroot = forestutils.make_file_rootname(lasfile)
+    fileroot = make_file_rootname(lasfile)
     print(fileroot)
 
     for productname in tern_products.keys():
@@ -464,7 +515,7 @@ def export_tern_products(tern_products, metadata, resolution, lasfile, outpath):
                                    productname,
                                    raster_name)
         print(raster_path)
-        forestutils.write_product_geotiff(tern_products[productname], raster_path, raster_parameters)
+        write_product_geotiff(tern_products[productname], raster_path, raster_parameters)
 
 
     return()
