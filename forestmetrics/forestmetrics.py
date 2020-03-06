@@ -86,6 +86,16 @@ def comp_vcf(points):
 # (sum(weight * MaxNumberOfreturns * numberofpointsatreturn) / sum(weight * MaxNumberofReturns)) - 1
 
 def comp_cli(points):
+    """
+    compute a canopy layering index as:
+
+    (sum(weight * MaxNumberOfreturns * numberofpointsatreturn) / sum(weight * MaxNumberofReturns)) - 1
+
+    ...where 'weight' is meant to be a likelhood of observing a return, computed as 1/[nreturn]. this is a
+    bit idealised - the probablility of observation is likely to be heavily dependent on what the laser is
+    pointed at...
+    """
+
     maxreturns = np.max(points["NumberOfReturns"])
     minreturns = np.min(points["NumberOfReturns"])
 
@@ -135,9 +145,9 @@ def comp_veg_layers(points, heights):
     """
     veg_below = {}
     #find veg returns - ASPRS classes 3,4,5
-    veg_returns = np.where(np.logical_or(points["Classification"].values == 3,
-                             points["Classification"].values == 4,
-                             points["Classification"].values == 5))
+    veg_returns = np.where(np.logical_or(np.logical_or(points["Classification"].values == 3,
+                                 points["Classification"].values == 4),
+                                 points["Classification"].values == 5))
     # set total of veg returns
     veg_below["all"] = np.size(veg_returns)
 
@@ -202,11 +212,16 @@ def comp_lcf(veg_below, vcf):
 # vegetation returns above 2m'. Below 2m is ignored
 
 def comp_cth(points):
-    # compute the highest vegetation point in each grid cell
+    """
+    compute the highest vegetation point in each grid cell using the rule
+    '0.95 quantile of vegetation returns above 2m' rather than 'single highest
+    point'
 
-    veg_returns = np.where(np.logical_or(points["Classification"].values == 3,
-                             points["Classification"].values == 4,
-                             points["Classification"].values == 5))
+    """
+
+    veg_returns = np.where(np.logical_or(np.logical_or(points["Classification"].values == 3,
+                                 points["Classification"].values == 4),
+                                 points["Classification"].values == 5))
 
     try:
 
@@ -225,16 +240,19 @@ def comp_cth(points):
 
     return(cth)
 
-#CBH - ambiguous in TERN docs, will pull from MATLAB code
+# CBH - ambiguous in TERN docs, will pull from MATLAB code
 # there, it states that CBH is the 0.1th percentile of vegetation with normalised height
 # above 2m
 def comp_cbh(points):
-    # compute the canopy base height in each cell.
+    """
+    compute the canopy base height in each cell.
+    if it can't be computed return NODATA_VALUE
+    """
 
     # grab an index of vegetation returns
-    veg_returns = np.where(np.logical_or(points["Classification"].values == 3,
-                             points["Classification"].values == 4,
-                             points["Classification"].values == 5))
+    veg_returns = np.where(np.logical_or(np.logical_or(points["Classification"].values == 3,
+                                 points["Classification"].values == 4),
+                                 points["Classification"].values == 5))
     try:
         #create an array of vegetation point normalised heights
         vegpoints = points["HeightAboveGround"].values[veg_returns]
@@ -255,8 +273,10 @@ def comp_cbh(points):
     return(cbh)
 
 def comp_fbf(points):
-    # if building classes exist, compute a fractional cover per grid cell...
-    # if no buildings exist return 0
+    """
+    if building classes exist, compute a fractional cover per grid cell...
+    if no buildings exist return 0
+    """
 
     building_returns = np.where(points["Classification"].values == 6)
 
@@ -273,7 +293,8 @@ def comp_fbf(points):
 
 def comp_density(points, resolution):
     """
-    compute mean point density - npoints / area
+    compute mean point density - npoints / area. If there's a
+    computational impossibility return NODATA_VALUE
     """
     try:
         #find number of points, any dimension will work here...
@@ -281,8 +302,8 @@ def comp_density(points, resolution):
 
         # divide npoints by area
         mean_density = np.int(np.floor(npoints / resolution**2))
-    except ValueError:
 
+    except ValueError:
         mean_density = NODATA_VALUE
 
     return(mean_density)
@@ -290,14 +311,15 @@ def comp_density(points, resolution):
 def comp_vh(points):
     """
     find vegetation points, compute mean height above ground for any vegetation
-    present
+    present. If no vegetation is present in the ROI, retun the NODATA_VALUE
 
     """
 
     try:
-        veg_returns = np.where(np.logical_or(points["Classification"].values == 3,
-                                 points["Classification"].values == 4,
+        veg_returns = np.where(np.logical_or(np.logical_or(points["Classification"].values == 3,
+                                 points["Classification"].values == 4),
                                  points["Classification"].values == 5))
+        
         vh = np.mean(points["HeightAboveGround"].values[veg_returns])
     except ValueError:
         vh = NODATA_VALUE
