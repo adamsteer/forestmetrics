@@ -319,8 +319,8 @@ def comp_vh(points):
         veg_returns = np.where(np.logical_or(np.logical_or(points["Classification"].values == 3,
                                  points["Classification"].values == 4),
                                  points["Classification"].values == 5))
-        
-        vh = np.mean(points["HeightAboveGround"].values[veg_returns])
+
+        vh = np.median(points["HeightAboveGround"].values[veg_returns])
     except ValueError:
         vh = NODATA_VALUE
 
